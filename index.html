@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e4b8a" />
+  <meta name="description" content="Редактор технических эскизов: стены, размеры, розетки. Работает на телефоне." />
+  <title>Чертёж — редактор эскизов</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231e4b8a'/%3E%3Cpath d='M7 22 16 8l9 14' fill='none' stroke='white' stroke-width='2'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/editor.css" />
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">Чертёж</div>
+      <input id="doc-title" class="title-input" type="text" maxlength="120" placeholder="Название чертежа" aria-label="Название чертежа" />
+      <div class="top-actions" id="top-actions"></div>
+    </header>
+    <nav class="tools" id="tools" aria-label="Инструменты"></nav>
+    <div class="viewport" id="viewport" data-tool="select">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg" role="application" aria-label="Холст чертежа">
+        <g id="world">
+          <g id="grid"></g>
+          <g id="shapes"></g>
+          <g id="guides"></g>
+          <g id="overlay"></g>
+        </g>
+      </svg>
+      <div id="text-editor" class="text-editor" hidden>
+        <textarea id="text-editor-input" rows="2" aria-label="Текст на чертеже"></textarea>
+      </div>
+    </div>
+    <aside class="props" id="props" aria-label="Свойства">
+      <div class="props-block">
+        <div class="prop-label">Цвет линии</div>
+        <div class="row">
+          <div class="swatches" id="stroke-swatches"></div>
+          <input type="color" id="stroke-picker" aria-label="Свой цвет линии" value="#1e4b8a" />
+        </div>
+      </div>
+      <div class="props-block">
+        <div class="prop-label">Заливка</div>
+        <div class="row">
+          <div class="swatches" id="fill-swatches"></div>
+          <button type="button" id="fill-none" class="text-btn">Нет</button>
+          <input type="color" id="fill-picker" aria-label="Свой цвет заливки" value="#ffffff" />
+        </div>
+      </div>
+      <div class="props-block">
+        <div class="prop-label">Толщина</div>
+        <div class="seg" id="width-buttons"></div>
+      </div>
+      <div class="props-block">
+        <div class="prop-label">Линия</div>
+        <div class="seg">
+          <button type="button" id="dash-solid" class="text-btn">Сплошная</button>
+          <button type="button" id="dash-dashed" class="text-btn">Пунктир</button>
+        </div>
+      </div>
+      <div class="props-block">
+        <div class="prop-label">Текст <span id="font-size-value">18</span></div>
+        <input type="range" id="font-size" min="12" max="48" step="1" value="18" aria-label="Размер текста" />
+      </div>
+      <div class="props-block" id="variant-row" hidden>
+        <div class="prop-label">Круг</div>
+        <div class="seg">
+          <button type="button" id="variant-empty" class="text-btn">Пустой</button>
+          <button type="button" id="variant-filled" class="text-btn">Залитый</button>
+          <button type="button" id="variant-cross" class="text-btn">Крест</button>
+        </div>
+      </div>
+      <div class="props-block" id="label-row" hidden>
+        <div class="prop-label" id="label-caption">Надпись</div>
+        <input type="text" id="prop-label" maxlength="200" aria-label="Надпись" />
+        <button type="button" id="prop-edit" class="text-btn">Изменить</button>
+      </div>
+      <div class="file-actions" id="file-actions"></div>
+    </aside>
+    <footer class="statusbar">
+      <span id="status-hint" class="hint"></span>
+      <span id="status-snap"></span>
+      <span id="status-zoom">100%</span>
+    </footer>
+  </div>
+
+  <dialog id="pdf-dialog">
+    <form id="pdf-form">
+      <h2>Экспорт PDF</h2>
+      <label>Формат
+        <select id="pdf-format" aria-label="Формат листа">
+          <option value="a4">A4</option>
+          <option value="a3">A3</option>
+        </select>
+      </label>
+      <label>Ориентация
+        <select id="pdf-orient" aria-label="Ориентация листа">
+          <option value="landscape">Альбомная</option>
+          <option value="portrait">Книжная</option>
+        </select>
+      </label>
+      <p class="dialog-note">Линии и подписи попадают в PDF как вектор. Кириллица встраивается шрифтом Noto Sans.</p>
+      <div class="dialog-actions">
+        <button type="button" id="pdf-cancel" class="text-btn">Отмена</button>
+        <button type="submit" id="pdf-ok" class="text-btn primary">Скачать PDF</button>
+      </div>
+    </form>
+  </dialog>
+  <input type="file" id="file-input" accept="application/json,.json" hidden />
+  <script src="vendor/jspdf.umd.min.js" defer></script>
+  <script src="vendor/svg2pdf.umd.min.js" defer></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
