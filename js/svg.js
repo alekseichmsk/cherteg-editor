@@ -1,6 +1,6 @@
 /** SVG markup for shapes. Shared by the canvas and by file/PDF export. */
 
-import { arrowHeadPoints, arrowSize, boundsOf, crossSegments, uprightAngle } from "./geometry.js";
+import { arrowHeadPoints, arrowSize, boundsOf, captionAnchor, crossSegments, uprightAngle } from "./geometry.js";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
@@ -28,6 +28,30 @@ function textEl(x, y, content, { size, fill, anchor = "start", baseline = "hangi
     .map((line, index) => `<tspan x="${n(x)}" dy="${index === 0 ? 0 : n(size * 1.25)}">${esc(line) || " "}</tspan>`)
     .join("");
   return `<text x="${n(x)}" y="${n(y)}" text-anchor="${anchor}" dominant-baseline="${baseline}" font-family="NotoSans" font-size="${n(size)}" font-weight="${weight}" font-style="normal" fill="${esc(fill)}">${tspans}</text>`;
+}
+
+function centeredLines(text, size, fill, halo) {
+  const lines = String(text).split("\n");
+  const lh = size * 1.25;
+  const mid = (lines.length - 1) / 2;
+  return lines
+    .map((line, index) => {
+      const y = (index - mid) * lh;
+      const common = `x="0" y="${n(y)}" text-anchor="middle" dominant-baseline="central" font-family="NotoSans" font-size="${n(size)}" font-weight="400" font-style="normal"`;
+      const shown = esc(line) || " ";
+      if (!halo) return `<text ${common} fill="${esc(fill)}" stroke="none">${shown}</text>`;
+      return `<text ${common} fill="#ffffff" stroke="#ffffff" stroke-width="${n(size * 0.22)}" stroke-linejoin="round" paint-order="stroke fill">${shown}</text><text ${common} fill="${esc(fill)}" stroke="none">${shown}</text>`;
+    })
+    .join("");
+}
+
+function captionMarkup(shape) {
+  if (!shape.caption || !String(shape.caption).trim()) return "";
+  const anchor = captionAnchor(shape);
+  if (!anchor) return "";
+  const size = shape.fontSize || 18;
+  const rot = anchor.rotate ? ` rotate(${n(anchor.rotate)})` : "";
+  return `<g class="shape-caption" transform="translate(${n(anchor.x)} ${n(anchor.y)})${rot}">${centeredLines(shape.caption, size, shape.stroke || "#1a1a1a", true)}</g>`;
 }
 
 function dimensionMarkup(shape) {
@@ -111,6 +135,7 @@ export function shapeToSvg(shape) {
     default:
       break;
   }
+  body += captionMarkup(shape);
   return `<g data-id="${id}" data-type="${esc(shape.type)}">${body}</g>`;
 }
 

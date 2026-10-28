@@ -116,10 +116,23 @@ export function shapePoints(shape) {
   }
 }
 
+const measuredTextBoxes = new Map();
+
+/** World-space ink box of a text shape, taken from the rendered glyphs. */
+export function setMeasuredTextBox(id, box) {
+  if (!id) return;
+  if (!box || !(box.w > 0) || !(box.h > 0)) measuredTextBoxes.delete(id);
+  else measuredTextBoxes.set(id, { x: box.x, y: box.y, w: box.w, h: box.h });
+}
+
+export function clearMeasuredTextBoxes() {
+  measuredTextBoxes.clear();
+}
+
 export function textWidth(text, fontSize) {
   const lines = String(text ?? "").split("\n");
   const max = Math.max(1, ...lines.map((line) => line.length));
-  return max * fontSize * 0.58;
+  return max * fontSize * 0.62;
 }
 
 export function textHeight(text, fontSize) {
@@ -127,8 +140,47 @@ export function textHeight(text, fontSize) {
   return Math.max(1, lines.length) * fontSize * 1.25;
 }
 
+export function supportsCaption(type) {
+  return type === "line" || type === "arrow" || type === "rect" || type === "triangle" || type === "circle";
+}
+
+/** Centre of the caption, and rotation in degrees so a line label stays upright. */
+export function captionAnchor(shape) {
+  if (!shape || !supportsCaption(shape.type)) return null;
+  if (shape.type === "rect") return { x: shape.x + shape.w / 2, y: shape.y + shape.h / 2, rotate: 0 };
+  if (shape.type === "circle") return { x: shape.cx, y: shape.cy, rotate: 0 };
+  if (shape.type === "triangle" && shape.points?.length === 3) {
+    const [a, b, c] = shape.points;
+    return { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3, rotate: 0 };
+  }
+  return {
+    x: (shape.x1 + shape.x2) / 2,
+    y: (shape.y1 + shape.y2) / 2,
+    rotate: (uprightAngle(shape.x1, shape.y1, shape.x2, shape.y2) * 180) / Math.PI,
+  };
+}
+
+function includeCaption(shape, box) {
+  if (!shape.caption || !String(shape.caption).trim()) return box;
+  const anchor = captionAnchor(shape);
+  if (!anchor) return box;
+  const size = Number(shape.fontSize) || 18;
+  const lines = String(shape.caption).split("\n");
+  const estW = Math.max(1, ...lines.map((line) => line.length)) * size * 0.62;
+  const estH = Math.max(size, lines.length * size * 1.25);
+  const along = shape.type === "line" || shape.type === "arrow";
+  const halfW = along ? Math.max(estW, estH) / 2 : estW / 2;
+  const halfH = along ? Math.max(estW, estH) / 2 : estH / 2;
+  const left = Math.min(box.x, anchor.x - halfW);
+  const top = Math.min(box.y, anchor.y - halfH);
+  const right = Math.max(box.x + box.w, anchor.x + halfW);
+  const bottom = Math.max(box.y + box.h, anchor.y + halfH);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}
+
 export function shapeBounds(shape) {
   const pad = (Number(shape.strokeWidth) || 2) * 0.5 + 2;
+  let box;
   switch (shape.type) {
     case "line":
     case "arrow":
@@ -140,10 +192,12 @@ export function shapeBounds(shape) {
       const y = Math.min(shape.y1, shape.y2) - pad - extra;
       const r = Math.max(shape.x1, shape.x2) + pad + extra;
       const b = Math.max(shape.y1, shape.y2) + pad + extra;
-      return { x, y, w: r - x, h: b - y };
+      box = { x, y, w: r - x, h: b - y };
+      break;
     }
     case "rect":
-      return { x: shape.x - pad, y: shape.y - pad, w: shape.w + pad * 2, h: shape.h + pad * 2 };
+      box = { x: shape.x - pad, y: shape.y - pad, w: shape.w + pad * 2, h: shape.h + pad * 2 };
+      break;
     case "triangle": {
       const xs = shape.points.map((p) => p.x);
       const ys = shape.points.map((p) => p.y);
@@ -151,24 +205,29 @@ export function shapeBounds(shape) {
       const y = Math.min(...ys) - pad;
       const r = Math.max(...xs) + pad;
       const b = Math.max(...ys) + pad;
-      return { x, y, w: r - x, h: b - y };
+      box = { x, y, w: r - x, h: b - y };
+      break;
     }
     case "circle":
     case "marker":
-      return {
+      box = {
         x: shape.cx - shape.r - pad,
         y: shape.cy - shape.r - pad,
         w: (shape.r + pad) * 2,
         h: (shape.r + pad) * 2,
       };
+      break;
     case "text": {
+      const measured = measuredTextBoxes.get(shape.id);
+      if (measured) return { ...measured };
       const w = textWidth(shape.text, shape.fontSize || 18);
       const h = textHeight(shape.text, shape.fontSize || 18);
-      return { x: shape.x - 2, y: shape.y - 2, w: w + 4, h: h + 4 };
+      return { x: shape.x, y: shape.y, w, h };
     }
     default:
       return { x: 0, y: 0, w: 0, h: 0 };
   }
+  return includeCaption(shape, box);
 }
 
 export function boundsOf(shapes) {

@@ -1,6 +1,7 @@
 import {
   applyHandle,
   boundsOf,
+  captionAnchor,
   cloneShape,
   constrainSquare,
   dist,
@@ -8,9 +9,12 @@ import {
   hitHandle,
   hitTestShape,
   normalizeRect,
+  setMeasuredTextBox,
+  clearMeasuredTextBoxes,
   shapeBounds,
   shapeIntersectsRect,
   shapePoints,
+  supportsCaption,
   translateShape,
 } from "./geometry.js";
 import { describeSnap, snapPointer } from "./snap.js";
@@ -263,6 +267,8 @@ export function startEditor() {
       shape.labelEdited = true;
     } else if (shape.type === "text") {
       shape.text = labelInput.value;
+    } else if (supportsCaption(shape.type)) {
+      shape.caption = labelInput.value;
     }
     renderShapes();
     renderOverlay();
@@ -270,7 +276,7 @@ export function startEditor() {
   });
   editBtn.addEventListener("click", () => {
     const shape = selectedShapes()[0];
-    if (shape && (shape.type === "text" || shape.type === "dimension")) openTextEditor(shape);
+    if (shape && (shape.type === "text" || shape.type === "dimension" || supportsCaption(shape.type))) openTextEditor(shape);
   });
 
   titleInput.addEventListener("input", () => {
@@ -344,6 +350,10 @@ export function startEditor() {
   setTool("select");
   renderAll();
   loadFontBuffer().catch(() => {});
+  document.fonts?.ready?.then(() => {
+    measureTextShapes();
+    renderOverlay();
+  });
 
   window.__editor = {
     getState: () => structuredClone(state),
@@ -510,6 +520,7 @@ export function startEditor() {
   function onViewChange() {
     world.setAttribute("transform", `translate(${view.tx} ${view.ty}) scale(${view.scale})`);
     renderGrid();
+    measureTextShapes();
     renderOverlay();
     updateStatus();
   }
@@ -517,11 +528,33 @@ export function startEditor() {
   function renderAll() {
     onViewChange();
     renderShapes();
+    renderOverlay();
     syncPanel();
   }
 
   function renderShapes() {
     shapesGroup.innerHTML = state.shapes.map(shapeToSvg).join("");
+    measureTextShapes();
+  }
+
+  function measureTextShapes() {
+    clearMeasuredTextBoxes();
+    const svg = stage;
+    for (const group of shapesGroup.querySelectorAll('[data-type="text"]')) {
+      const text = group.querySelector("text");
+      if (!text) continue;
+      const rect = text.getBoundingClientRect();
+      if (rect.width < 0.5 || rect.height < 0.5) continue;
+      const p1 = clientToWorld(rect.left, rect.top);
+      const p2 = clientToWorld(rect.right, rect.bottom);
+      setMeasuredTextBox(group.getAttribute("data-id"), {
+        x: Math.min(p1.x, p2.x),
+        y: Math.min(p1.y, p2.y),
+        w: Math.abs(p2.x - p1.x),
+        h: Math.abs(p2.y - p1.y),
+      });
+    }
+    void svg;
   }
 
   function renderGrid() {
@@ -680,9 +713,9 @@ export function startEditor() {
       document.getElementById("variant-filled").classList.toggle("active", only.variant === "filled");
       document.getElementById("variant-cross").classList.toggle("active", only.variant === "cross");
     }
-    const showLabel = only && (only.type === "text" || only.type === "dimension" || only.type === "marker");
+    const showLabel = only && (only.type === "text" || only.type === "dimension" || only.type === "marker" || supportsCaption(only.type));
     labelRow.hidden = !showLabel;
-    editBtn.hidden = !(only && (only.type === "text" || only.type === "dimension"));
+    editBtn.hidden = !(only && (only.type === "text" || only.type === "dimension" || supportsCaption(only.type)));
     if (showLabel && document.activeElement !== labelInput) {
       if (only.type === "marker") {
         labelCaption.textContent = "Номер";
@@ -690,9 +723,12 @@ export function startEditor() {
       } else if (only.type === "dimension") {
         labelCaption.textContent = "Размер";
         labelInput.value = only.label ?? "";
-      } else {
+      } else if (only.type === "text") {
         labelCaption.textContent = "Текст";
         labelInput.value = only.text ?? "";
+      } else {
+        labelCaption.textContent = "Текст";
+        labelInput.value = only.caption ?? "";
       }
     }
   }
@@ -817,16 +853,27 @@ export function startEditor() {
     autosave();
   }
 
+  function editorAnchor(shape) {
+    if (shape.type === "text") return { x: shape.x, y: shape.y };
+    if (shape.type === "dimension") return { x: (shape.x1 + shape.x2) / 2, y: (shape.y1 + shape.y2) / 2 };
+    return captionAnchor(shape) || { x: shape.x || shape.cx || 0, y: shape.y || shape.cy || 0 };
+  }
+
+  function editableText(shape) {
+    if (shape.type === "text") return shape.text ?? "";
+    if (shape.type === "dimension") return shape.label ?? "";
+    if (shape.type === "marker") return String(shape.n ?? "");
+    return shape.caption ?? "";
+  }
+
   function openTextEditor(shape) {
-    const point =
-      shape.type === "text"
-        ? worldToClient(shape.x, shape.y)
-        : worldToClient((shape.x1 + shape.x2) / 2, (shape.y1 + shape.y2) / 2);
+    const point = editorAnchor(shape);
+    const screen = worldToClient(point.x, point.y);
     const rect = viewport.getBoundingClientRect();
     textEditor.hidden = false;
-    textEditor.style.left = `${Math.max(8, point.x - rect.left)}px`;
-    textEditor.style.top = `${Math.max(8, point.y - rect.top)}px`;
-    textInput.value = shape.type === "dimension" ? shape.label ?? "" : shape.text ?? "";
+    textEditor.style.left = `${Math.max(8, screen.x - rect.left)}px`;
+    textEditor.style.top = `${Math.max(8, screen.y - rect.top)}px`;
+    textInput.value = editableText(shape);
     textInput.dataset.id = shape.id;
     textInput.focus();
     textInput.select();
@@ -857,6 +904,11 @@ export function startEditor() {
       beforeChange();
       shape.label = value || "0";
       shape.labelEdited = true;
+      autosave();
+    } else if (supportsCaption(shape.type) && value !== (shape.caption || "")) {
+      beforeChange();
+      if (value.trim()) shape.caption = value;
+      else delete shape.caption;
       autosave();
     }
     renderAll();
@@ -948,6 +1000,16 @@ export function startEditor() {
 
   function beginSelect(event, worldPoint) {
     const coarse = event.pointerType === "touch" || coarsePointer;
+    const hit = hitTop(worldPoint, coarse);
+    const now = performance.now();
+    const canEdit = hit && (hit.type === "text" || hit.type === "dimension" || supportsCaption(hit.type));
+    if (canEdit && lastTap.id === hit.id && now - lastTap.t < 450) {
+      selection = new Set([hit.id]);
+      lastTap = { id: null, t: 0 };
+      renderAll();
+      openTextEditor(hit);
+      return;
+    }
     const only = selection.size === 1 ? state.shapes.find((shape) => selection.has(shape.id)) : null;
     if (only) {
       const handle = hitHandle(only, worldPoint, view.scale, coarse);
@@ -965,15 +1027,6 @@ export function startEditor() {
         };
         return;
       }
-    }
-    const hit = hitTop(worldPoint, coarse);
-    const now = performance.now();
-    if (hit && (hit.type === "text" || hit.type === "dimension") && lastTap.id === hit.id && now - lastTap.t < 450) {
-      selection = new Set([hit.id]);
-      lastTap = { id: null, t: 0 };
-      renderAll();
-      openTextEditor(hit);
-      return;
     }
     lastTap = { id: hit?.id ?? null, t: now };
     if (hit) {
@@ -1486,17 +1539,38 @@ function guidesMarkup(guides, bounds, scale) {
     .join("");
 }
 
+function textFrameMarkup(shape, scale) {
+  const box = shapeBounds(shape);
+  const pad = 1 / scale;
+  const x = box.x - pad;
+  const y = box.y - pad;
+  const w = Math.max(pad, box.w + pad * 2);
+  const h = Math.max(pad, box.h + pad * 2);
+  const sw = 1 / scale;
+  const corners = [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+  const handles = corners
+    .map(
+      ([cx, cy]) =>
+        `<g transform="translate(${cx} ${cy}) scale(${sw})"><rect x="-5" y="-5" width="10" height="10" rx="1.5" fill="#ffffff" stroke="#2563eb" stroke-width="1.5"/></g>`,
+    )
+    .join("");
+  return `<g data-role="text-frame"><rect data-overlay="1" data-role="text-frame-rect" x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="#2563eb" stroke-width="${sw}"/>${handles}</g>`;
+}
+
 function outlineMarkup(shape, scale) {
-  if (shape.type === "text") {
-    const box = shapeBounds(shape);
-    return `<rect data-overlay="1" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" fill="none" stroke="#2563eb" stroke-width="${1 / scale}"/>`;
-  }
+  if (shape.type === "text") return textFrameMarkup(shape, scale);
   const ghost = cloneShape(shape);
   ghost.id = `${shape.id}-sel`;
   ghost.stroke = "#2563eb";
   ghost.strokeWidth = (shape.strokeWidth || 2) + 1.15 / scale;
   ghost.fill = "none";
   ghost.dashed = false;
+  delete ghost.caption;
   if (ghost.type === "dimension" || ghost.type === "arrow") ghost.type = "line";
   if (ghost.type === "marker") {
     ghost.type = "circle";

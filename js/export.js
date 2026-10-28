@@ -1,6 +1,6 @@
 /** PNG, SVG and PDF export. PDF is vector via jsPDF + svg2pdf, with a raster fallback. */
 
-import { arrowHeadPoints, arrowSize, boundsOf, crossSegments, uprightAngle } from "./geometry.js";
+import { arrowHeadPoints, arrowSize, boundsOf, captionAnchor, crossSegments, uprightAngle } from "./geometry.js";
 import { buildSvgDocument } from "./svg.js";
 
 const fontUrl = new URL("../vendor/NotoSans-Regular.ttf", import.meta.url);
@@ -184,6 +184,33 @@ function drawShape(ctx, shape) {
     default:
       break;
   }
+  drawCaption(ctx, shape);
+}
+
+function drawCaption(ctx, shape) {
+  if (!shape.caption || !String(shape.caption).trim()) return;
+  const anchor = captionAnchor(shape);
+  if (!anchor) return;
+  const lines = String(shape.caption).split("\n");
+  const size = shape.fontSize || 18;
+  const lh = size * 1.25;
+  const mid = (lines.length - 1) / 2;
+  ctx.save();
+  ctx.translate(anchor.x, anchor.y);
+  ctx.rotate((anchor.rotate * Math.PI) / 180);
+  ctx.font = `${size}px NotoSans`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  lines.forEach((line, index) => {
+    const y = (index - mid) * lh;
+    ctx.lineWidth = size * 0.22;
+    ctx.strokeStyle = "#ffffff";
+    ctx.strokeText(line, 0, y);
+    ctx.fillStyle = shape.stroke || "#1a1a1a";
+    ctx.fillText(line, 0, y);
+  });
+  ctx.restore();
 }
 
 export async function renderPngBlob(shapes, { pixelRatio = 2, background = "#ffffff", padding = 28 } = {}) {
