@@ -91,6 +91,10 @@ function sanitizeShape(raw) {
     shape.y = num(raw.y);
     shape.text = String(raw.text ?? "").slice(0, 500);
   }
+  if (type !== "text" && type !== "dimension" && type !== "marker" && typeof raw.caption === "string") {
+    const caption = raw.caption.slice(0, 300);
+    if (caption.trim()) shape.caption = caption;
+  }
   return shape;
 }
 

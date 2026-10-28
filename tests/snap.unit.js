@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { captionAnchor } from "../js/geometry.js";
 import { snapPointer } from "../js/snap.js";
 import { buildSvgDocument } from "../js/svg.js";
 
@@ -130,6 +131,25 @@ test("dimension svg puts the label on the line with a halo", () => {
   assert.match(filled, /fill="#ffffff"/);
   assert.doesNotMatch(filled, /fill="none"/);
   assert.match(svg, /1950/);
+  const labeled = buildSvgDocument([
+    {
+      id: "r",
+      type: "rect",
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 40,
+      stroke: "#1e4b8a",
+      strokeWidth: 2,
+      fontSize: 18,
+      caption: "Холодильник",
+    },
+  ]);
+  assert.match(labeled, /Холодильник/);
+  assert.match(labeled, /text-anchor="middle"/);
+  const anchor = captionAnchor({ type: "rect", x: 0, y: 0, w: 100, h: 40 });
+  assert.equal(anchor.x, 50);
+  assert.equal(anchor.y, 20);
   assert.match(svg, /rotate/);
   assert.match(svg, /stroke="#ffffff"/);
   assert.match(svg, /data-type="circle"/);
